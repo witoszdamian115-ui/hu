@@ -1,0 +1,5 @@
+{
+  "name": "wowAI Hub - Twój asystent AI",
+  "description": "Rozmawiaj z modelami Gemini, twórz własne Gems i korzystaj z zaawansowanych funkcji AI w jednym miejscu.",
+  "requestFramePermissions": ["microphone"]
+}

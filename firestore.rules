@@ -1,0 +1,91 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+    function isAdmin() {
+      return isAuthenticated() && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         (request.auth.token.email == "witoszdamian115@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email']) &&
+             data.uid is string &&
+             data.email is string;
+    }
+    function isValidChat(data) {
+      return data.keys().hasAll(['userId', 'title', 'createdAt']) &&
+             data.userId is string &&
+             data.title is string &&
+             data.title.size() <= 100;
+    }
+    function isValidMessage(data) {
+      return data.keys().hasAll(['chatId', 'userId', 'role', 'content', 'createdAt']) &&
+             data.chatId is string &&
+             data.userId is string &&
+             data.role in ['user', 'model'] &&
+             data.content is string &&
+             data.content.size() <= 10000;
+    }
+    function isValidGem(data) {
+      return data.keys().hasAll(['userId', 'name', 'createdAt']) &&
+             data.userId is string &&
+             data.name is string &&
+             data.name.size() <= 50;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    // User profiles
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if (isOwner(userId) || isAdmin()) && isValidUser(request.resource.data);
+    }
+
+    // Chats
+    match /chats/{chatId} {
+      allow read: if isDocOwner() || isAdmin();
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid && isValidChat(request.resource.data);
+      allow update: if (isDocOwner() || isAdmin()) && isValidChat(request.resource.data);
+      allow delete: if isDocOwner() || isAdmin();
+
+      // Messages subcollection
+      match /messages/{messageId} {
+        allow read: if isAuthenticated() && (get(/databases/$(database)/documents/chats/$(chatId)).data.userId == request.auth.uid || isAdmin());
+        allow create: if isAuthenticated() && (get(/databases/$(database)/documents/chats/$(chatId)).data.userId == request.auth.uid || isAdmin()) && isValidMessage(request.resource.data);
+        allow update: if isAdmin();
+        allow delete: if isAdmin();
+      }
+    }
+
+    // Gems
+    match /gems/{gemId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid && isValidGem(request.resource.data);
+      allow update: if isDocOwner() || isAdmin();
+      allow delete: if isDocOwner() || isAdmin();
+    }
+    
+    // Test connection
+    match /test/connection {
+      allow read: if true;
+    }
+  }
+}
