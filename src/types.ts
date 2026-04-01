@@ -8,6 +8,15 @@ export interface UserProfile {
   isPlus?: boolean;
   theme?: 'dark' | 'cyber' | 'sunset' | 'minimal';
   bio?: string;
+  wallpaper?: string;
+  aiName?: string;
+  aiAvatar?: string;
+  fontFamily?: string;
+  soundEnabled?: boolean;
+  confettiEnabled?: boolean;
+  focusMode?: boolean;
+  zenMode?: boolean;
+  codeTheme?: string;
 }
 
 export interface Chat {
@@ -17,8 +26,8 @@ export interface Chat {
   gemId?: string;
   createdAt: Timestamp;
   lastMessageAt: Timestamp;
-  sharedWithUids?: string[];
-  pendingInvites?: string[];
+  category?: string;
+  isPinned?: boolean;
 }
 
 export interface Message {
@@ -29,6 +38,8 @@ export interface Message {
   content: string;
   image?: string | null;
   createdAt: Timestamp;
+  isPinned?: boolean;
+  isBookmarked?: boolean;
 }
 
 export interface Gem {

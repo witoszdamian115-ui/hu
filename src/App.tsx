@@ -66,7 +66,31 @@ import {
   Settings,
   X,
   FileText,
-  Edit2
+  Edit2,
+  Languages,
+  ImagePlus,
+  Wallpaper,
+  History,
+  FileDown,
+  Pin,
+  Bookmark,
+  FolderOpen,
+  Eye,
+  Music,
+  UserCheck,
+  BarChart2,
+  Hash,
+  Clock,
+  Type as TypeIcon,
+  VolumeX,
+  PartyPopper,
+  Brain,
+  Sliders,
+  Maximize2,
+  Minimize2,
+  FileSearch,
+  Check,
+  AlertCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GoogleGenAI, Modality, Type } from "@google/genai";
@@ -183,6 +207,7 @@ export default function App() {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<'hub' | 'chat' | 'gem-creator' | 'payment'>('hub');
+  const [showPlusSettings, setShowPlusSettings] = useState(false);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -267,7 +292,16 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <div className="min-h-screen bg-[#0a0a0a] text-white font-sans selection:bg-orange-500/30">
+      <div className={cn(
+        "min-h-screen bg-[#0a0a0a] text-white selection:bg-orange-500/30 transition-all duration-500",
+        userProfile?.fontFamily === 'serif' ? 'font-serif' : userProfile?.fontFamily === 'mono' ? 'font-mono' : 'font-sans',
+        userProfile?.focusMode && "p-4"
+      )}>
+        {userProfile?.zenMode && (
+          <div className="fixed inset-0 pointer-events-none z-0 opacity-20">
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 via-purple-500/20 to-pink-500/20 animate-pulse" />
+          </div>
+        )}
         <AnimatePresence mode="wait">
           {view === 'hub' && (
             <MainHub 
@@ -276,6 +310,8 @@ export default function App() {
               onOpenChat={(id) => { setActiveChatId(id); setView('chat'); }} 
               onOpenGemCreator={() => setView('gem-creator')}
               onOpenPayment={() => setView('payment')}
+              showPlusSettings={showPlusSettings}
+              setShowPlusSettings={setShowPlusSettings}
             />
           )}
           {view === 'chat' && activeChatId && (
@@ -333,16 +369,19 @@ function LoginView() {
   );
 }
 
-function MainHub({ user, userProfile, onOpenChat, onOpenGemCreator, onOpenPayment }: { 
+function MainHub({ user, userProfile, onOpenChat, onOpenGemCreator, onOpenPayment, showPlusSettings, setShowPlusSettings }: { 
   user: User, 
   userProfile: UserProfile | null,
   onOpenChat: (id: string) => void, 
   onOpenGemCreator: () => void,
-  onOpenPayment: () => void
+  onOpenPayment: () => void,
+  showPlusSettings: boolean,
+  setShowPlusSettings: (show: boolean) => void
 }) {
   const [chats, setChats] = useState<Chat[]>([]);
   const [gems, setGems] = useState<Gem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [isEditingBio, setIsEditingBio] = useState(false);
   const [bioInput, setBioInput] = useState(userProfile?.bio || '');
   const [editingChatId, setEditingChatId] = useState<string | null>(null);
@@ -450,9 +489,49 @@ function MainHub({ user, userProfile, onOpenChat, onOpenGemCreator, onOpenPaymen
     }
   };
 
-  const filteredChats = chats.filter(c => 
-    c.title.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const updatePlusSetting = async (key: keyof UserProfile, value: any) => {
+    if (!userProfile?.isPlus) return;
+    try {
+      await updateDoc(doc(db, 'users', user.uid), { [key]: value });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+    }
+  };
+
+  const categories = ['all', 'Praca', 'Nauka', 'Kreatywne', 'Inne'];
+
+  const togglePinChat = async (e: React.MouseEvent, chatId: string, currentStatus: boolean) => {
+    e.stopPropagation();
+    if (!userProfile?.isPlus) return;
+    try {
+      await updateDoc(doc(db, 'chats', chatId), {
+        isPinned: !currentStatus
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `chats/${chatId}`);
+    }
+  };
+
+  const updateChatCategory = async (e: React.MouseEvent, chatId: string, category: string) => {
+    e.stopPropagation();
+    if (!userProfile?.isPlus) return;
+    try {
+      await updateDoc(doc(db, 'chats', chatId), {
+        category
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `chats/${chatId}`);
+    }
+  };
+
+  const filteredChats = chats
+    .filter(c => c.title.toLowerCase().includes(searchQuery.toLowerCase()))
+    .filter(c => selectedCategory === 'all' || c.category === selectedCategory)
+    .sort((a, b) => {
+      if (a.isPinned && !b.isPinned) return -1;
+      if (!a.isPinned && b.isPinned) return 1;
+      return b.lastMessageAt.toMillis() - a.lastMessageAt.toMillis();
+    });
 
   return (
     <motion.div 
@@ -510,20 +589,32 @@ function MainHub({ user, userProfile, onOpenChat, onOpenGemCreator, onOpenPaymen
 
         <div className="flex items-center gap-3">
           {userProfile?.isPlus && (
-            <div className="flex bg-white/5 p-1 rounded-xl border border-white/10">
-              {(['dark', 'cyber', 'sunset', 'minimal'] as const).map((t) => (
-                <button
-                  key={t}
-                  onClick={() => updateTheme(t)}
-                  className={cn(
-                    "p-2 rounded-lg transition-all",
-                    userProfile.theme === t ? "bg-orange-500 text-white" : "text-gray-500 hover:text-gray-300"
-                  )}
-                  title={`Motyw ${t}`}
-                >
-                  <Palette className="w-4 h-4" />
-                </button>
-              ))}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowPlusSettings(!showPlusSettings)}
+                className={cn(
+                  "p-3 rounded-xl transition-all border",
+                  showPlusSettings ? "bg-orange-500 border-orange-500 text-white" : "bg-white/5 border-white/10 text-gray-400 hover:bg-white/10"
+                )}
+                title="Ustawienia Plus"
+              >
+                <Sliders className="w-5 h-5" />
+              </button>
+              <div className="flex bg-white/5 p-1 rounded-xl border border-white/10">
+                {(['dark', 'cyber', 'sunset', 'minimal'] as const).map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => updateTheme(t)}
+                    className={cn(
+                      "p-2 rounded-lg transition-all",
+                      userProfile.theme === t ? "bg-orange-500 text-white" : "text-gray-500 hover:text-gray-300"
+                    )}
+                    title={`Motyw ${t}`}
+                  >
+                    <Palette className="w-4 h-4" />
+                  </button>
+                ))}
+              </div>
             </div>
           )}
           {!userProfile?.isPlus && (
@@ -544,6 +635,176 @@ function MainHub({ user, userProfile, onOpenChat, onOpenGemCreator, onOpenPaymen
         </div>
       </header>
 
+      {showPlusSettings && userProfile?.isPlus && (
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-white/5 border border-white/10 rounded-3xl p-6 space-y-8"
+        >
+          <div className="flex items-center justify-between">
+            <h3 className="text-xl font-bold flex items-center gap-2">
+              <Crown className="w-5 h-5 text-orange-500" />
+              Ustawienia wowAI Plus
+            </h3>
+            <button onClick={() => setShowPlusSettings(false)} className="p-2 hover:bg-white/10 rounded-lg">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {/* AI Identity */}
+            <div className="space-y-4 p-4 bg-white/5 rounded-2xl border border-white/10">
+              <h4 className="font-bold flex items-center gap-2 text-sm uppercase tracking-wider text-gray-400">
+                <Bot className="w-4 h-4" /> Tożsamość AI
+              </h4>
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-xs text-gray-500">Nazwa AI</label>
+                  <input 
+                    value={userProfile.aiName || 'wowAI'}
+                    onChange={(e) => updatePlusSetting('aiName', e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-gray-500">Avatar AI (URL)</label>
+                  <input 
+                    value={userProfile.aiAvatar || ''}
+                    onChange={(e) => updatePlusSetting('aiAvatar', e.target.value)}
+                    placeholder="https://..."
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Visuals */}
+            <div className="space-y-4 p-4 bg-white/5 rounded-2xl border border-white/10">
+              <h4 className="font-bold flex items-center gap-2 text-sm uppercase tracking-wider text-gray-400">
+                <Palette className="w-4 h-4" /> Wygląd
+              </h4>
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-xs text-gray-500">Czcionka</label>
+                  <div className="flex gap-2">
+                    {['sans', 'serif', 'mono'].map(f => (
+                      <button 
+                        key={f}
+                        onClick={() => updatePlusSetting('fontFamily', f)}
+                        className={cn(
+                          "flex-1 py-2 rounded-lg text-xs font-bold border transition-all capitalize",
+                          userProfile.fontFamily === f ? "bg-orange-500 border-orange-500 text-white" : "bg-white/5 border-white/10 text-gray-500"
+                        )}
+                      >
+                        {f}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-gray-500">Tapeta Czatu</label>
+                  <div className="flex items-center gap-3">
+                    <input 
+                      type="color"
+                      value={userProfile.wallpaper || '#0a0a0a'}
+                      onChange={(e) => updatePlusSetting('wallpaper', e.target.value)}
+                      className="w-10 h-10 bg-transparent border-none cursor-pointer"
+                    />
+                    <span className="text-xs text-gray-400 font-mono">{userProfile.wallpaper || '#0a0a0a'}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modes */}
+            <div className="space-y-4 p-4 bg-white/5 rounded-2xl border border-white/10">
+              <h4 className="font-bold flex items-center gap-2 text-sm uppercase tracking-wider text-gray-400">
+                <Zap className="w-4 h-4" /> Tryby Pracy
+              </h4>
+              <div className="space-y-3">
+                <button 
+                  onClick={() => updatePlusSetting('focusMode', !userProfile.focusMode)}
+                  className={cn(
+                    "w-full flex items-center justify-between p-3 rounded-xl border transition-all",
+                    userProfile.focusMode ? "bg-orange-500/10 border-orange-500/50 text-orange-500" : "bg-white/5 border-white/10 text-gray-400"
+                  )}
+                >
+                  <div className="flex items-center gap-3">
+                    <Maximize2 className="w-4 h-4" />
+                    <div className="text-left">
+                      <p className="text-xs font-bold">Focus Mode</p>
+                      <p className="text-[10px] opacity-60">Czysty interfejs</p>
+                    </div>
+                  </div>
+                  {userProfile.focusMode && <Check className="w-4 h-4" />}
+                </button>
+                <button 
+                  onClick={() => updatePlusSetting('zenMode', !userProfile.zenMode)}
+                  className={cn(
+                    "w-full flex items-center justify-between p-3 rounded-xl border transition-all",
+                    userProfile.zenMode ? "bg-blue-500/10 border-blue-500/50 text-blue-500" : "bg-white/5 border-white/10 text-gray-400"
+                  )}
+                >
+                  <div className="flex items-center gap-3">
+                    <Brain className="w-4 h-4" />
+                    <div className="text-left">
+                      <p className="text-xs font-bold">Zen Mode</p>
+                      <p className="text-[10px] opacity-60">Spokojne tło</p>
+                    </div>
+                  </div>
+                  {userProfile.zenMode && <Check className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Experience */}
+            <div className="space-y-4 p-4 bg-white/5 rounded-2xl border border-white/10">
+              <h4 className="font-bold flex items-center gap-2 text-sm uppercase tracking-wider text-gray-400">
+                <Volume2 className="w-4 h-4" /> Doświadczenie
+              </h4>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/10">
+                  <div className="flex items-center gap-3">
+                    <Volume2 className="w-4 h-4 text-gray-400" />
+                    <span className="text-xs font-bold">Dźwięki</span>
+                  </div>
+                  <button 
+                    onClick={() => updatePlusSetting('soundEnabled', !userProfile.soundEnabled)}
+                    className={cn(
+                      "w-10 h-5 rounded-full transition-all relative",
+                      userProfile.soundEnabled ? "bg-orange-500" : "bg-white/10"
+                    )}
+                  >
+                    <div className={cn(
+                      "absolute top-1 w-3 h-3 bg-white rounded-full transition-all",
+                      userProfile.soundEnabled ? "left-6" : "left-1"
+                    )} />
+                  </button>
+                </div>
+                <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/10">
+                  <div className="flex items-center gap-3">
+                    <PartyPopper className="w-4 h-4 text-gray-400" />
+                    <span className="text-xs font-bold">Konfetti</span>
+                  </div>
+                  <button 
+                    onClick={() => updatePlusSetting('confettiEnabled', !userProfile.confettiEnabled)}
+                    className={cn(
+                      "w-10 h-5 rounded-full transition-all relative",
+                      userProfile.confettiEnabled ? "bg-orange-500" : "bg-white/10"
+                    )}
+                  >
+                    <div className={cn(
+                      "absolute top-1 w-3 h-3 bg-white rounded-full transition-all",
+                      userProfile.confettiEnabled ? "left-6" : "left-1"
+                    )} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
       <div className="relative max-w-2xl mx-auto">
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
         <input 
@@ -552,6 +813,23 @@ function MainHub({ user, userProfile, onOpenChat, onOpenGemCreator, onOpenPaymen
           placeholder="Szukaj w rozmowach..."
           className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:border-orange-500 transition-all shadow-xl"
         />
+        
+        {userProfile?.isPlus && (
+          <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide mt-4">
+            {categories.map(cat => (
+              <button
+                key={cat}
+                onClick={() => setSelectedCategory(cat)}
+                className={cn(
+                  "px-4 py-2 rounded-xl text-xs uppercase font-bold whitespace-nowrap transition-all border",
+                  selectedCategory === cat ? "bg-orange-500 border-orange-500 text-white shadow-lg shadow-orange-500/20" : "bg-white/5 border-white/10 text-gray-500 hover:bg-white/10"
+                )}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="grid md:grid-cols-2 gap-12">
@@ -581,13 +859,19 @@ function MainHub({ user, userProfile, onOpenChat, onOpenGemCreator, onOpenPaymen
                   key={chat.id}
                   layoutId={chat.id}
                   onClick={() => onOpenChat(chat.id)}
-                  className="group p-4 bg-white/5 border border-white/5 rounded-2xl flex items-center justify-between cursor-pointer hover:bg-white/10 hover:border-white/20 transition-all"
+                  className={cn(
+                    "group relative p-4 bg-white/5 border border-white/5 rounded-2xl flex items-center justify-between cursor-pointer hover:bg-white/10 hover:border-white/20 transition-all",
+                    chat.isPinned && "border-orange-500/30 bg-orange-500/5"
+                  )}
                 >
-                  <div className="flex items-center gap-4 flex-1">
-                    <div className="w-10 h-10 bg-orange-500/10 rounded-xl flex items-center justify-center flex-shrink-0">
-                      <MessageSquare className="w-5 h-5 text-orange-500" />
+                  <div className="flex items-center gap-4 min-w-0 flex-1">
+                    <div className={cn(
+                      "w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-colors",
+                      chat.isPinned ? "bg-orange-500 text-white" : "bg-white/5 text-gray-400 group-hover:bg-orange-500/10 group-hover:text-orange-500"
+                    )}>
+                      {chat.isPinned ? <Pin className="w-5 h-5" /> : <MessageSquare className="w-5 h-5" />}
                     </div>
-                    <div className="flex-1">
+                    <div className="min-w-0 flex-1">
                       {editingChatId === chat.id ? (
                         <form onSubmit={(e) => saveChatTitle(e, chat.id)} className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                           <input 
@@ -599,25 +883,64 @@ function MainHub({ user, userProfile, onOpenChat, onOpenGemCreator, onOpenPaymen
                           <button type="submit" className="text-orange-500 text-xs font-bold">Zapisz</button>
                         </form>
                       ) : (
-                        <>
-                          <h4 className="font-medium truncate max-w-[200px]">{chat.title}</h4>
-                          <p className="text-xs text-gray-500">
-                            {chat.createdAt?.toDate().toLocaleDateString()}
-                          </p>
-                        </>
+                        <div className="space-y-0.5">
+                          <p className="font-bold truncate group-hover:text-orange-500 transition-colors">{chat.title}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="text-[10px] text-gray-500 font-medium uppercase tracking-wider">
+                              {chat.lastMessageAt.toDate().toLocaleDateString()}
+                            </p>
+                            {chat.category && (
+                              <span className="text-[10px] bg-white/5 text-gray-400 px-1.5 py-0.5 rounded uppercase font-bold border border-white/10">
+                                {chat.category}
+                              </span>
+                            )}
+                          </div>
+                        </div>
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-1">
+                  
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                    {userProfile?.isPlus && (
+                      <>
+                        <button 
+                          onClick={(e) => togglePinChat(e, chat.id, !!chat.isPinned)}
+                          className={cn("p-2 rounded-lg hover:bg-white/10 transition-colors", chat.isPinned ? "text-orange-500" : "text-gray-500")}
+                          title="Przypnij"
+                        >
+                          <Pin className="w-4 h-4" />
+                        </button>
+                        <div className="relative group/cat">
+                          <button 
+                            onClick={(e) => e.stopPropagation()}
+                            className="p-2 rounded-lg hover:bg-white/10 transition-colors text-gray-500"
+                            title="Kategoria"
+                          >
+                            <FolderOpen className="w-4 h-4" />
+                          </button>
+                          <div className="absolute right-0 bottom-full mb-2 hidden group-hover/cat:flex flex-col bg-[#1a1a1a] border border-white/10 rounded-xl p-1 z-50 shadow-2xl">
+                            {categories.filter(c => c !== 'all').map(cat => (
+                              <button 
+                                key={cat} 
+                                onClick={(e) => updateChatCategory(e, chat.id, cat)} 
+                                className="px-4 py-2 text-[10px] hover:bg-white/5 rounded-lg whitespace-nowrap uppercase font-bold text-gray-400 hover:text-white text-left"
+                              >
+                                {cat}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    )}
                     <button 
                       onClick={(e) => startEditingChat(e, chat)}
-                      className="p-2 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-500 transition-all"
+                      className="p-2 text-gray-500 hover:text-white hover:bg-white/10 rounded-lg transition-all"
                     >
                       <Edit2 className="w-4 h-4" />
                     </button>
                     <button 
                       onClick={(e) => deleteChat(chat.id, e)}
-                      className="p-2 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-500 transition-all"
+                      className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-all"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -801,7 +1124,49 @@ function ChatRoom({ user, userProfile, chatId, onBack }: { user: User, userProfi
   const [isRecording, setIsRecording] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [chatTitle, setChatTitle] = useState('');
+  const [isSummarizing, setIsSummarizing] = useState(false);
+  const [smartReplies, setSmartReplies] = useState<string[]>([]);
+  const [wallpaper, setWallpaper] = useState(userProfile?.wallpaper || '');
+  const [showWallpaperPicker, setShowWallpaperPicker] = useState(false);
+  const [showPlusMenu, setShowPlusMenu] = useState(false);
+  const [showUrlInput, setShowUrlInput] = useState(false);
+  const [urlToAnalyze, setUrlToAnalyze] = useState('');
+  const [isAnalyzingUrl, setIsAnalyzingUrl] = useState(false);
+  const [showAdvancedParams, setShowAdvancedParams] = useState(false);
+  const [temp, setTemp] = useState(0.7);
+  const [topP, setTopP] = useState(0.95);
+  const [topK, setTopK] = useState(64);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const compressImage = (base64Str: string, maxWidth = 800, maxHeight = 800, quality = 0.7): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.src = base64Str;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > maxWidth) {
+            height *= maxWidth / width;
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width *= maxHeight / height;
+            height = maxHeight;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+    });
+  };
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<any>(null);
 
@@ -860,6 +1225,517 @@ function ChatRoom({ user, userProfile, chatId, onBack }: { user: User, userProfi
     }
   };
 
+  const summarizeChat = async () => {
+    if (!userProfile?.isPlus) return;
+    setIsSummarizing(true);
+    try {
+      const chatHistory = messages.map(m => `${m.role}: ${m.content}`).join('\n');
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `Podsumuj tę rozmowę w zwięzły sposób. Wypunktuj kluczowe ustalenia.
+        Historia:
+        ${chatHistory}`,
+      });
+      
+      await addDoc(collection(db, 'chats', chatId, 'messages'), {
+        chatId,
+        userId: user.uid,
+        role: 'model',
+        content: `📝 **Podsumowanie rozmowy:**\n\n${response.text}`,
+        createdAt: serverTimestamp(),
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `chats/${chatId}/messages`);
+    } finally {
+      setIsSummarizing(false);
+    }
+  };
+
+  const translateMessage = async (messageId: string, content: string) => {
+    if (!userProfile?.isPlus) return;
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `Przetłumacz tę wiadomość na polski. Jeśli jest już po polsku, przetłumacz na angielski. Zwróć TYLKO przetłumaczony tekst.
+        Tekst: "${content}"`,
+      });
+      
+      const msgRef = doc(db, 'chats', chatId, 'messages', messageId);
+      await updateDoc(msgRef, {
+        content: `${content}\n\n--- 🌐 Tłumaczenie ---\n${response.text}`
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `chats/${chatId}/messages/${messageId}`);
+    }
+  };
+
+  const generateVariation = async (originalImage: string) => {
+    if (!userProfile?.isPlus) return;
+    setIsTyping(true);
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash-image',
+        contents: {
+          parts: [
+            { inlineData: { data: originalImage.split(',')[1], mimeType: "image/png" } },
+            { text: "Wygeneruj kreatywną wariację tego obrazu. Zachowaj główny temat, ale zmień styl lub otoczenie." }
+          ]
+        }
+      });
+
+      let imageUrl = '';
+      for (const part of response.candidates?.[0]?.content?.parts || []) {
+        if (part.inlineData) {
+          const rawImage = `data:image/png;base64,${part.inlineData.data}`;
+          imageUrl = await compressImage(rawImage);
+          break;
+        }
+      }
+
+      if (imageUrl) {
+        await addDoc(collection(db, 'chats', chatId, 'messages'), {
+          chatId,
+          userId: user.uid,
+          role: 'model',
+          content: "Oto wariacja Twojego obrazu ✨",
+          image: imageUrl,
+          createdAt: serverTimestamp(),
+        });
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `chats/${chatId}/messages`);
+    } finally {
+      setIsTyping(false);
+    }
+  };
+
+  const updateWallpaper = async (color: string) => {
+    if (!userProfile?.isPlus) return;
+    setWallpaper(color);
+    try {
+      await updateDoc(doc(db, 'users', user.uid), {
+        wallpaper: color
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+    }
+  };
+
+  const exportToMarkdown = () => {
+    if (!userProfile?.isPlus) return;
+    const content = messages.map(m => `### ${m.role === 'user' ? 'TY' : 'AI'}\n${m.content}`).join('\n\n---\n\n');
+    const blob = new Blob([content], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `chat-${chatId}.md`;
+    a.click();
+  };
+
+  const analyzeUrl = async () => {
+    if (!userProfile?.isPlus || !urlToAnalyze.trim()) return;
+    setIsAnalyzingUrl(true);
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `Przeanalizuj treść pod tym adresem URL i streść najważniejsze informacje: ${urlToAnalyze}`,
+        config: { tools: [{ urlContext: {} }] }
+      });
+      
+      await addDoc(collection(db, 'chats', chatId, 'messages'), {
+        chatId,
+        userId: user.uid,
+        role: 'model',
+        content: `🌐 **Analiza strony:** ${urlToAnalyze}\n\n${response.text}`,
+        createdAt: serverTimestamp(),
+      });
+      setShowUrlInput(false);
+      setUrlToAnalyze('');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `chats/${chatId}/messages`);
+    } finally {
+      setIsAnalyzingUrl(false);
+    }
+  };
+
+  const performOcr = async (imageUrl: string) => {
+    if (!userProfile?.isPlus) return;
+    setIsTyping(true);
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: {
+          parts: [
+            { inlineData: { data: imageUrl.split(',')[1], mimeType: "image/png" } },
+            { text: "Wyodrębnij cały tekst z tego obrazu. Zwróć tylko tekst." }
+          ]
+        }
+      });
+      
+      await addDoc(collection(db, 'chats', chatId, 'messages'), {
+        chatId,
+        userId: user.uid,
+        role: 'model',
+        content: `🔍 **Wyodrębniony tekst:**\n\n${response.text}`,
+        createdAt: serverTimestamp(),
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `chats/${chatId}/messages`);
+    } finally {
+      setIsTyping(false);
+    }
+  };
+
+  const changeTone = async (messageId: string, content: string, tone: string) => {
+    if (!userProfile?.isPlus) return;
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `Przepisz tę wiadomość w tonie: ${tone}. Zachowaj oryginalny sens.\n\nTekst: "${content}"`,
+      });
+      
+      const msgRef = doc(db, 'chats', chatId, 'messages', messageId);
+      await updateDoc(msgRef, {
+        content: `${content}\n\n--- ✨ Ton: ${tone} ---\n${response.text}`
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `chats/${chatId}/messages/${messageId}`);
+    }
+  };
+
+  const fixGrammar = async (messageId: string, content: string) => {
+    if (!userProfile?.isPlus) return;
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `Popraw błędy gramatyczne, ortograficzne i interpunkcyjne w tym tekście. Zwróć tylko poprawioną wersję.\n\nTekst: "${content}"`,
+      });
+      
+      const msgRef = doc(db, 'chats', chatId, 'messages', messageId);
+      await updateDoc(msgRef, {
+        content: `${content}\n\n--- ✍️ Poprawiona wersja ---\n${response.text}`
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `chats/${chatId}/messages/${messageId}`);
+    }
+  };
+
+  const analyzeSentiment = async () => {
+    if (!userProfile?.isPlus) return;
+    try {
+      const chatHistory = messages.map(m => `${m.role}: ${m.content}`).join('\n');
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `Przeanalizuj sentyment tej rozmowy. Czy jest pozytywny, negatywny czy neutralny? Wypisz też 3 główne słowa kluczowe.\n\nHistoria:\n${chatHistory}`,
+      });
+      
+      await addDoc(collection(db, 'chats', chatId, 'messages'), {
+        chatId,
+        userId: user.uid,
+        role: 'model',
+        content: `📊 **Analiza rozmowy:**\n\n${response.text}`,
+        createdAt: serverTimestamp(),
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `chats/${chatId}/messages`);
+    }
+  };
+
+  const togglePinMessage = async (messageId: string, currentStatus: boolean) => {
+    if (!userProfile?.isPlus) return;
+    try {
+      await updateDoc(doc(db, 'chats', chatId, 'messages', messageId), {
+        isPinned: !currentStatus
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `chats/${chatId}/messages/${messageId}`);
+    }
+  };
+
+  const toggleBookmarkMessage = async (messageId: string, currentStatus: boolean) => {
+    if (!userProfile?.isPlus) return;
+    try {
+      await updateDoc(doc(db, 'chats', chatId, 'messages', messageId), {
+        isBookmarked: !currentStatus
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `chats/${chatId}/messages/${messageId}`);
+    }
+  };
+
+  const explainCode = async (messageId: string, content: string) => {
+    if (!userProfile?.isPlus) return;
+    setIsTyping(true);
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `Wyjaśnij ten kod krok po kroku w prosty sposób. Skup się na logice.\n\nKod:\n${content}`,
+      });
+      
+      await addDoc(collection(db, 'chats', chatId, 'messages'), {
+        chatId,
+        userId: user.uid,
+        role: 'model',
+        content: `💻 **Wyjaśnienie kodu:**\n\n${response.text}`,
+        createdAt: serverTimestamp(),
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `chats/${chatId}/messages`);
+    } finally {
+      setIsTyping(false);
+    }
+  };
+
+  const optimizeCode = async (messageId: string, content: string) => {
+    if (!userProfile?.isPlus) return;
+    setIsTyping(true);
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `Zasugeruj optymalizację dla tego kodu. Popraw wydajność, czytelność i bezpieczeństwo.\n\nKod:\n${content}`,
+      });
+      
+      await addDoc(collection(db, 'chats', chatId, 'messages'), {
+        chatId,
+        userId: user.uid,
+        role: 'model',
+        content: `🚀 **Optymalizacja kodu:**\n\n${response.text}`,
+        createdAt: serverTimestamp(),
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `chats/${chatId}/messages`);
+    } finally {
+      setIsTyping(false);
+    }
+  };
+
+  const generateQuiz = async () => {
+    if (!userProfile?.isPlus) return;
+    setIsTyping(true);
+    try {
+      const chatHistory = messages.map(m => `${m.role}: ${m.content}`).join('\n');
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `Na podstawie tej rozmowy wygeneruj krótki quiz (3 pytania wielokrotnego wyboru) sprawdzający wiedzę. Podaj poprawne odpowiedzi na końcu.\n\nHistoria:\n${chatHistory}`,
+      });
+      
+      await addDoc(collection(db, 'chats', chatId, 'messages'), {
+        chatId,
+        userId: user.uid,
+        role: 'model',
+        content: `🧠 **Quiz wiedzy:**\n\n${response.text}`,
+        createdAt: serverTimestamp(),
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `chats/${chatId}/messages`);
+    } finally {
+      setIsTyping(false);
+    }
+  };
+
+  const extractKeyTerms = async () => {
+    if (!userProfile?.isPlus) return;
+    setIsTyping(true);
+    try {
+      const chatHistory = messages.map(m => `${m.role}: ${m.content}`).join('\n');
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `Wypisz najważniejsze pojęcia, terminy i definicje, które pojawiły się w tej rozmowie.\n\nHistoria:\n${chatHistory}`,
+      });
+      
+      await addDoc(collection(db, 'chats', chatId, 'messages'), {
+        chatId,
+        userId: user.uid,
+        role: 'model',
+        content: `📚 **Kluczowe pojęcia:**\n\n${response.text}`,
+        createdAt: serverTimestamp(),
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `chats/${chatId}/messages`);
+    } finally {
+      setIsTyping(false);
+    }
+  };
+
+  const createActionItems = async () => {
+    if (!userProfile?.isPlus) return;
+    setIsTyping(true);
+    try {
+      const chatHistory = messages.map(m => `${m.role}: ${m.content}`).join('\n');
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `Wyodrębnij z tej rozmowy listę zadań do wykonania (Action Items / TODO list).\n\nHistoria:\n${chatHistory}`,
+      });
+      
+      await addDoc(collection(db, 'chats', chatId, 'messages'), {
+        chatId,
+        userId: user.uid,
+        role: 'model',
+        content: `✅ **Lista zadań:**\n\n${response.text}`,
+        createdAt: serverTimestamp(),
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `chats/${chatId}/messages`);
+    } finally {
+      setIsTyping(false);
+    }
+  };
+
+  const factCheck = async (content: string) => {
+    if (!userProfile?.isPlus) return;
+    setIsTyping(true);
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `Sprawdź fakty w tej wypowiedzi AI. Czy są one prawdziwe i aktualne? Użyj wyszukiwarki Google, aby potwierdzić informacje.\n\nTekst: "${content}"`,
+        config: { tools: [{ googleSearch: {} }] }
+      });
+      
+      await addDoc(collection(db, 'chats', chatId, 'messages'), {
+        chatId,
+        userId: user.uid,
+        role: 'model',
+        content: `🔍 **Fact-check:**\n\n${response.text}`,
+        createdAt: serverTimestamp(),
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `chats/${chatId}/messages`);
+    } finally {
+      setIsTyping(false);
+    }
+  };
+
+  const generateImageFromMessage = async (content: string) => {
+    if (!userProfile?.isPlus) return;
+    setIsTyping(true);
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash-image',
+        contents: { parts: [{ text: `Stwórz obraz na podstawie tego tekstu: "${content}"` }] },
+      });
+      
+      let imageUrl = '';
+      for (const part of response.candidates?.[0]?.content?.parts || []) {
+        if (part.inlineData) {
+          const rawImage = `data:image/png;base64,${part.inlineData.data}`;
+          imageUrl = await compressImage(rawImage);
+          break;
+        }
+      }
+
+      if (imageUrl) {
+        await addDoc(collection(db, 'chats', chatId, 'messages'), {
+          chatId,
+          userId: user.uid,
+          role: 'model',
+          content: "Oto obraz wygenerowany na podstawie treści wiadomości 🎨",
+          image: imageUrl,
+          createdAt: serverTimestamp(),
+        });
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `chats/${chatId}/messages`);
+    } finally {
+      setIsTyping(false);
+    }
+  };
+
+  const rewriteClarity = async (messageId: string, content: string) => {
+    if (!userProfile?.isPlus) return;
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `Przepisz tę wiadomość tak, aby była jak najbardziej klarowna i zrozumiała. Usuń zbędne słowa.\n\nTekst: "${content}"`,
+      });
+      
+      const msgRef = doc(db, 'chats', chatId, 'messages', messageId);
+      await updateDoc(msgRef, {
+        content: `${content}\n\n--- 💡 Klarowniejsza wersja ---\n${response.text}`
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `chats/${chatId}/messages/${messageId}`);
+    }
+  };
+
+  const expandContent = async (messageId: string, content: string) => {
+    if (!userProfile?.isPlus) return;
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `Rozwiń tę wiadomość. Dodaj więcej szczegółów, przykładów i wyjaśnień.\n\nTekst: "${content}"`,
+      });
+      
+      const msgRef = doc(db, 'chats', chatId, 'messages', messageId);
+      await updateDoc(msgRef, {
+        content: `${content}\n\n--- 📝 Rozwinięta wersja ---\n${response.text}`
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `chats/${chatId}/messages/${messageId}`);
+    }
+  };
+
+  const shortenContent = async (messageId: string, content: string) => {
+    if (!userProfile?.isPlus) return;
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `Skróć tę wiadomość do absolutnego minimum, zachowując najważniejszy przekaz.\n\nTekst: "${content}"`,
+      });
+      
+      const msgRef = doc(db, 'chats', chatId, 'messages', messageId);
+      await updateDoc(msgRef, {
+        content: `${content}\n\n--- ✂️ Skrócona wersja ---\n${response.text}`
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `chats/${chatId}/messages/${messageId}`);
+    }
+  };
+
+  const extractLinks = async (messageId: string, content: string) => {
+    if (!userProfile?.isPlus) return;
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `Wyodrębnij wszystkie linki (URL) z tego tekstu i wypisz je w czytelnej liście.\n\nTekst: "${content}"`,
+      });
+      
+      const msgRef = doc(db, 'chats', chatId, 'messages', messageId);
+      await updateDoc(msgRef, {
+        content: `${content}\n\n--- 🔗 Wyodrębnione linki ---\n${response.text}`
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `chats/${chatId}/messages/${messageId}`);
+    }
+  };
+
+  const wordCount = messages.reduce((acc, m) => acc + m.content.split(/\s+/).length, 0);
+  const charCount = messages.reduce((acc, m) => acc + m.content.length, 0);
+  const readingTime = Math.ceil(wordCount / 200);
+
+  const generateSmartReplies = async (lastMessage: string) => {
+    if (!userProfile?.isPlus) return;
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `Na podstawie tej odpowiedzi AI, zaproponuj 3 krótkie, trafne szybkie odpowiedzi dla użytkownika (po polsku). Zwróć TYLKO tablicę JSON ze stringami.
+        AI: "${lastMessage}"`,
+        config: { responseMimeType: "application/json" }
+      });
+      const replies = JSON.parse(response.text || '[]');
+      setSmartReplies(replies.slice(0, 3));
+    } catch (error) {
+      console.error("Error generating smart replies:", error);
+    }
+  };
+
+  useEffect(() => {
+    if (messages.length > 0 && messages[messages.length - 1].role === 'model' && userProfile?.isPlus) {
+      generateSmartReplies(messages[messages.length - 1].content);
+    } else {
+      setSmartReplies([]);
+    }
+  }, [messages, userProfile?.isPlus]);
+
   useEffect(() => {
     const fetchChatAndGem = async () => {
       try {
@@ -898,14 +1774,28 @@ function ChatRoom({ user, userProfile, chatId, onBack }: { user: User, userProfi
     }
   }, [messages]);
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
+    if (!file) return;
+
+    if (file.type.startsWith('image/')) {
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setSelectedImage(reader.result as string);
+      reader.onloadend = async () => {
+        const compressed = await compressImage(reader.result as string);
+        setSelectedImage(compressed);
       };
       reader.readAsDataURL(file);
+    } else if (file.type === 'text/plain' || file.name.endsWith('.txt') || file.name.endsWith('.md')) {
+      if (!userProfile?.isPlus) {
+        alert("Przesyłanie plików tekstowych jest dostępne tylko dla użytkowników Plus!");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const content = e.target?.result as string;
+        setInput(prev => prev + `\n\n--- Zawartość pliku ${file.name} ---\n${content}\n--- Koniec pliku ---`);
+      };
+      reader.readAsText(file);
     }
   };
 
@@ -994,7 +1884,8 @@ function ChatRoom({ user, userProfile, chatId, onBack }: { user: User, userProfi
         
         for (const part of response.candidates[0].content.parts) {
           if (part.inlineData) {
-            responseImage = `data:image/png;base64,${part.inlineData.data}`;
+            const rawImage = `data:image/png;base64,${part.inlineData.data}`;
+            responseImage = await compressImage(rawImage);
             botResponse = `Oto wygenerowany obraz dla: "${prompt}"`;
           } else if (part.text) {
             botResponse = part.text;
@@ -1108,7 +1999,63 @@ function ChatRoom({ user, userProfile, chatId, onBack }: { user: User, userProfi
 
         {userProfile?.isPlus && (
           <div className="flex items-center gap-2">
-            <button 
+            <div className="relative">
+              <button
+                onClick={() => setShowPlusMenu(!showPlusMenu)}
+                className={cn(
+                  "p-2 rounded-xl transition-all",
+                  showPlusMenu ? "bg-orange-500 text-white" : "bg-white/5 text-orange-500 hover:bg-white/10"
+                )}
+                title="Plus Power Menu"
+              >
+                <Zap className="w-4 h-4" />
+              </button>
+              <AnimatePresence>
+                {showPlusMenu && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    className="absolute right-0 mt-2 w-72 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl p-2 z-50 grid grid-cols-2 gap-1 overflow-y-auto max-h-[400px]"
+                  >
+                    <button onClick={summarizeChat} className="flex flex-col items-center gap-2 p-3 hover:bg-white/5 rounded-xl transition-all text-[10px] uppercase font-bold text-gray-400 hover:text-white">
+                      <History className="w-4 h-4 text-orange-500" /> Podsumuj
+                    </button>
+                    <button onClick={analyzeSentiment} className="flex flex-col items-center gap-2 p-3 hover:bg-white/5 rounded-xl transition-all text-[10px] uppercase font-bold text-gray-400 hover:text-white">
+                      <BarChart2 className="w-4 h-4 text-blue-500" /> Analiza
+                    </button>
+                    <button onClick={() => setShowUrlInput(!showUrlInput)} className="flex flex-col items-center gap-2 p-3 hover:bg-white/5 rounded-xl transition-all text-[10px] uppercase font-bold text-gray-400 hover:text-white">
+                      <Globe className="w-4 h-4 text-green-500" /> Analiza URL
+                    </button>
+                    <button onClick={generateQuiz} className="flex flex-col items-center gap-2 p-3 hover:bg-white/5 rounded-xl transition-all text-[10px] uppercase font-bold text-gray-400 hover:text-white">
+                      <Brain className="w-4 h-4 text-purple-500" /> Quiz
+                    </button>
+                    <button onClick={extractKeyTerms} className="flex flex-col items-center gap-2 p-3 hover:bg-white/5 rounded-xl transition-all text-[10px] uppercase font-bold text-gray-400 hover:text-white">
+                      <Hash className="w-4 h-4 text-yellow-500" /> Pojęcia
+                    </button>
+                    <button onClick={createActionItems} className="flex flex-col items-center gap-2 p-3 hover:bg-white/5 rounded-xl transition-all text-[10px] uppercase font-bold text-gray-400 hover:text-white">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500" /> Zadania
+                    </button>
+                    <button onClick={exportToMarkdown} className="flex flex-col items-center gap-2 p-3 hover:bg-white/5 rounded-xl transition-all text-[10px] uppercase font-bold text-gray-400 hover:text-white">
+                      <FileDown className="w-4 h-4 text-purple-500" /> Markdown
+                    </button>
+                    <button onClick={() => setShowWallpaperPicker(!showWallpaperPicker)} className="flex flex-col items-center gap-2 p-3 hover:bg-white/5 rounded-xl transition-all text-[10px] uppercase font-bold text-gray-400 hover:text-white">
+                      <Palette className="w-4 h-4 text-pink-500" /> Tapeta
+                    </button>
+                    <button onClick={() => setShowAdvancedParams(!showAdvancedParams)} className="flex flex-col items-center gap-2 p-3 hover:bg-white/5 rounded-xl transition-all text-[10px] uppercase font-bold text-gray-400 hover:text-white">
+                      <Sliders className="w-4 h-4 text-yellow-500" /> Parametry
+                    </button>
+                    <div className="col-span-2 p-2 border-t border-white/5 mt-1">
+                      <div className="flex justify-between text-[10px] text-gray-500 font-bold uppercase tracking-widest">
+                        <span>Słowa: {wordCount}</span>
+                        <span>Czas: {readingTime}m</span>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+            <button
               onClick={exportChat}
               className="p-2 bg-white/5 rounded-xl hover:bg-white/10 transition-all text-gray-400"
               title="Eksportuj do .txt"
@@ -1141,7 +2088,73 @@ function ChatRoom({ user, userProfile, chatId, onBack }: { user: User, userProfi
         )}
       </header>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-6 scroll-smooth">
+      {showUrlInput && (
+        <div className="p-4 bg-[#1a1a1a] border-b border-white/10 flex gap-2">
+          <input 
+            value={urlToAnalyze}
+            onChange={(e) => setUrlToAnalyze(e.target.value)}
+            placeholder="Wklej URL do analizy..."
+            className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-green-500"
+          />
+          <button 
+            onClick={analyzeUrl}
+            disabled={isAnalyzingUrl}
+            className="px-4 py-2 bg-green-500 rounded-xl text-sm font-bold disabled:opacity-50"
+          >
+            {isAnalyzingUrl ? "Analizowanie..." : "Analizuj"}
+          </button>
+          <button onClick={() => setShowUrlInput(false)} className="p-2 hover:bg-white/5 rounded-xl">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {showAdvancedParams && (
+        <div className="p-4 bg-[#1a1a1a] border-b border-white/10 space-y-4">
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase font-bold text-gray-500">Temperature: {temp}</label>
+              <input type="range" min="0" max="2" step="0.1" value={temp} onChange={(e) => setTemp(parseFloat(e.target.value))} className="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-orange-500" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase font-bold text-gray-500">Top P: {topP}</label>
+              <input type="range" min="0" max="1" step="0.05" value={topP} onChange={(e) => setTopP(parseFloat(e.target.value))} className="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-orange-500" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase font-bold text-gray-500">Top K: {topK}</label>
+              <input type="range" min="1" max="100" step="1" value={topK} onChange={(e) => setTopK(parseInt(e.target.value))} className="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-orange-500" />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showWallpaperPicker && (
+        <div className="p-4 bg-white/5 border-b border-white/10 flex gap-2 overflow-x-auto">
+          {['', '#1a1a1a', '#2d1b4d', '#1b3d2d', '#3d1b1b', '#1b2d3d'].map(color => (
+            <button
+              key={color}
+              onClick={() => updateWallpaper(color)}
+              className={cn(
+                "w-8 h-8 rounded-full border-2 transition-transform hover:scale-110",
+                wallpaper === color ? "border-white" : "border-transparent"
+              )}
+              style={{ backgroundColor: color || 'transparent', backgroundImage: color ? 'none' : 'linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%, #ccc), linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%, #ccc)', backgroundSize: '8px 8px', backgroundPosition: '0 0, 4px 4px' }}
+            />
+          ))}
+          <input 
+            type="color" 
+            value={wallpaper.startsWith('#') ? wallpaper : '#000000'} 
+            onChange={(e) => updateWallpaper(e.target.value)}
+            className="w-8 h-8 rounded-full overflow-hidden border-none p-0 cursor-pointer"
+          />
+        </div>
+      )}
+
+      <div 
+        ref={scrollRef} 
+        className="flex-1 overflow-y-auto p-4 space-y-6 scroll-smooth"
+        style={{ backgroundColor: wallpaper || undefined }}
+      >
         {messages.length === 0 && !isTyping && (
           <div className="h-full flex flex-col items-center justify-center text-gray-500 space-y-4">
             <Sparkles className="w-12 h-12 opacity-20" />
@@ -1150,8 +2163,11 @@ function ChatRoom({ user, userProfile, chatId, onBack }: { user: User, userProfi
           </div>
         )}
         {messages.map((m) => (
-          <div 
+          <motion.div 
             key={m.id}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, ease: "easeOut" }}
             className={cn(
               "flex gap-4 max-w-3xl mx-auto group",
               m.role === 'user' ? "flex-row-reverse" : "flex-row"
@@ -1169,12 +2185,32 @@ function ChatRoom({ user, userProfile, chatId, onBack }: { user: User, userProfi
                 m.role === 'user' ? "bg-orange-500/10 text-orange-100" : "bg-white/5 text-gray-200"
               )}>
                 {m.image && (
-                  <img 
-                    src={m.image} 
-                    className="w-full max-w-sm rounded-xl mb-3 border border-white/10" 
-                    alt="Uploaded/Generated" 
-                    referrerPolicy="no-referrer"
-                  />
+                  <div className="space-y-2">
+                    <img 
+                      src={m.image} 
+                      className="w-full max-w-sm rounded-xl mb-3 border border-white/10" 
+                      alt="Uploaded/Generated" 
+                      referrerPolicy="no-referrer"
+                    />
+                    {userProfile?.isPlus && m.role === 'model' && (
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => generateVariation(m.image!)}
+                          className="flex items-center gap-2 text-[10px] bg-white/10 hover:bg-white/20 px-2 py-1 rounded-full transition-colors uppercase font-bold tracking-wider"
+                        >
+                          <ImagePlus className="w-3 h-3" />
+                          Wariacja
+                        </button>
+                        <button
+                          onClick={() => performOcr(m.image!)}
+                          className="flex items-center gap-2 text-[10px] bg-white/10 hover:bg-white/20 px-2 py-1 rounded-full transition-colors uppercase font-bold tracking-wider"
+                        >
+                          <FileSearch className="w-3 h-3" />
+                          OCR
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 )}
                 <div className="markdown-body">
                   <ReactMarkdown>
@@ -1183,34 +2219,123 @@ function ChatRoom({ user, userProfile, chatId, onBack }: { user: User, userProfi
                 </div>
                 
                 {m.role === 'model' && userProfile?.isPlus && (
-                  <button 
-                    onClick={() => playTTS(m.content, m.id)}
-                    className={cn(
-                      "absolute -right-10 top-0 p-2 rounded-lg hover:bg-white/5 transition-all opacity-0 group-hover:opacity-100",
-                      isReading === m.id && "text-orange-500 opacity-100 animate-pulse"
-                    )}
-                    title="Czytaj na głos"
-                  >
-                    <Volume2 className="w-4 h-4" />
-                  </button>
+                  <div className="absolute -right-10 top-0 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                    <button 
+                      onClick={() => playTTS(m.content, m.id)}
+                      className={cn(
+                        "p-2 rounded-lg hover:bg-white/5 transition-all",
+                        isReading === m.id && "text-orange-500 opacity-100 animate-pulse"
+                      )}
+                      title="Czytaj na głos"
+                    >
+                      <Volume2 className="w-4 h-4" />
+                    </button>
+                    <button 
+                      onClick={() => translateMessage(m.id, m.content)}
+                      className="p-2 rounded-lg hover:bg-white/5 transition-all text-gray-500 hover:text-white"
+                      title="Tłumacz"
+                    >
+                      <Languages className="w-4 h-4" />
+                    </button>
+                    <button 
+                      onClick={() => fixGrammar(m.id, m.content)}
+                      className="p-2 rounded-lg hover:bg-white/5 transition-all text-gray-500 hover:text-white"
+                      title="Popraw gramatykę"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <div className="relative group/tone">
+                      <button className="p-2 rounded-lg hover:bg-white/5 transition-all text-gray-500 hover:text-white">
+                        <TypeIcon className="w-4 h-4" />
+                      </button>
+                      <div className="absolute left-full top-0 ml-2 hidden group-hover/tone:flex flex-col bg-[#1a1a1a] border border-white/10 rounded-xl p-1 z-50">
+                        {['Formalny', 'Luzacki', 'Profesjonalny', 'Kreatywny'].map(tone => (
+                          <button key={tone} onClick={() => changeTone(m.id, m.content, tone)} className="px-3 py-1 text-[10px] hover:bg-white/5 rounded-lg whitespace-nowrap uppercase font-bold text-gray-400 hover:text-white">
+                            {tone}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="relative group/magic">
+                      <button className="p-2 rounded-lg hover:bg-white/5 transition-all text-orange-500">
+                        <Sparkles className="w-4 h-4" />
+                      </button>
+                      <div className="absolute left-full top-0 ml-2 hidden group-hover/magic:flex flex-col bg-[#1a1a1a] border border-white/10 rounded-xl p-1 z-50 min-w-[120px]">
+                        <button onClick={() => rewriteClarity(m.id, m.content)} className="px-3 py-1.5 text-[10px] hover:bg-white/5 rounded-lg text-left uppercase font-bold text-gray-400 hover:text-white flex items-center gap-2">
+                          <Eye className="w-3 h-3" /> Klarowność
+                        </button>
+                        <button onClick={() => expandContent(m.id, m.content)} className="px-3 py-1.5 text-[10px] hover:bg-white/5 rounded-lg text-left uppercase font-bold text-gray-400 hover:text-white flex items-center gap-2">
+                          <Maximize2 className="w-3 h-3" /> Rozwiń
+                        </button>
+                        <button onClick={() => shortenContent(m.id, m.content)} className="px-3 py-1.5 text-[10px] hover:bg-white/5 rounded-lg text-left uppercase font-bold text-gray-400 hover:text-white flex items-center gap-2">
+                          <Minimize2 className="w-3 h-3" /> Skróć
+                        </button>
+                        <button onClick={() => extractLinks(m.id, m.content)} className="px-3 py-1.5 text-[10px] hover:bg-white/5 rounded-lg text-left uppercase font-bold text-gray-400 hover:text-white flex items-center gap-2">
+                          <Globe className="w-3 h-3" /> Linki
+                        </button>
+                        <button onClick={() => generateImageFromMessage(m.content)} className="px-3 py-1.5 text-[10px] hover:bg-white/5 rounded-lg text-left uppercase font-bold text-gray-400 hover:text-white flex items-center gap-2">
+                          <ImageIcon className="w-3 h-3" /> Obraz
+                        </button>
+                        {m.content.includes('```') && (
+                          <>
+                            <button onClick={() => explainCode(m.id, m.content)} className="px-3 py-1.5 text-[10px] hover:bg-white/5 rounded-lg text-left uppercase font-bold text-gray-400 hover:text-white flex items-center gap-2">
+                              <Cpu className="w-3 h-3" /> Wyjaśnij Kod
+                            </button>
+                            <button onClick={() => optimizeCode(m.id, m.content)} className="px-3 py-1.5 text-[10px] hover:bg-white/5 rounded-lg text-left uppercase font-bold text-gray-400 hover:text-white flex items-center gap-2">
+                              <Zap className="w-3 h-3" /> Optymalizuj
+                            </button>
+                          </>
+                        )}
+                        {m.role === 'model' && (
+                          <button onClick={() => factCheck(m.content)} className="px-3 py-1.5 text-[10px] hover:bg-white/5 rounded-lg text-left uppercase font-bold text-gray-400 hover:text-white flex items-center gap-2">
+                            <UserCheck className="w-3 h-3" /> Fact-check
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 )}
-                <button 
-                  onClick={() => copyToClipboard(m.content)}
-                  className={cn(
-                    "absolute top-0 p-2 rounded-lg hover:bg-white/5 transition-all opacity-0 group-hover:opacity-100",
-                    m.role === 'user' ? "-left-10" : "-right-10",
-                    m.role === 'model' && userProfile?.isPlus && "top-10"
+                <div className={cn(
+                  "absolute top-0 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-all",
+                  m.role === 'user' ? "-left-10" : "-right-10",
+                  m.role === 'model' && userProfile?.isPlus ? "top-20" : "top-0"
+                )}>
+                  <button 
+                    onClick={() => copyToClipboard(m.content)}
+                    className="p-2 rounded-lg hover:bg-white/5 transition-all"
+                    title="Kopiuj"
+                  >
+                    <Copy className="w-4 h-4 text-gray-500" />
+                  </button>
+                  {userProfile?.isPlus && (
+                    <>
+                      <button 
+                        onClick={() => togglePinMessage(m.id, !!m.isPinned)}
+                        className={cn("p-2 rounded-lg hover:bg-white/5 transition-all", m.isPinned ? "text-orange-500" : "text-gray-500")}
+                        title="Przypnij"
+                      >
+                        <Pin className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={() => toggleBookmarkMessage(m.id, !!m.isBookmarked)}
+                        className={cn("p-2 rounded-lg hover:bg-white/5 transition-all", m.isBookmarked ? "text-blue-500" : "text-gray-500")}
+                        title="Zakładka"
+                      >
+                        <Bookmark className="w-4 h-4" />
+                      </button>
+                    </>
                   )}
-                  title="Kopiuj"
-                >
-                  <Copy className="w-4 h-4 text-gray-500" />
-                </button>
+                </div>
               </div>
             </div>
-          </div>
+          </motion.div>
         ))}
         {isTyping && (
-          <div className="flex gap-4 max-w-3xl mx-auto">
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex gap-4 max-w-3xl mx-auto"
+          >
             <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center animate-pulse">
               <Bot className="w-4 h-4" />
             </div>
@@ -1219,7 +2344,26 @@ function ChatRoom({ user, userProfile, chatId, onBack }: { user: User, userProfi
               <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce [animation-delay:0.2s]" />
               <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce [animation-delay:0.4s]" />
             </div>
-          </div>
+          </motion.div>
+        )}
+        {smartReplies.length > 0 && !isTyping && (
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex flex-wrap gap-2 justify-center max-w-3xl mx-auto pt-4"
+          >
+            {smartReplies.map((reply, i) => (
+              <button
+                key={i}
+                onClick={() => {
+                  setInput(reply);
+                }}
+                className="text-xs bg-white/5 hover:bg-white/10 border border-white/10 px-3 py-1.5 rounded-full transition-all text-white/60 hover:text-white hover:border-orange-500/50"
+              >
+                {reply}
+              </button>
+            ))}
+          </motion.div>
         )}
       </div>
 
@@ -1253,8 +2397,8 @@ function ChatRoom({ user, userProfile, chatId, onBack }: { user: User, userProfi
               <input 
                 type="file" 
                 ref={fileInputRef} 
-                onChange={handleImageUpload} 
-                accept="image/*" 
+                onChange={handleFileUpload} 
+                accept="image/*,.txt,.md" 
                 className="hidden" 
               />
               <button 

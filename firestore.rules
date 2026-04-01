@@ -70,8 +70,8 @@ service cloud.firestore {
       match /messages/{messageId} {
         allow read: if isAuthenticated() && (get(/databases/$(database)/documents/chats/$(chatId)).data.userId == request.auth.uid || isAdmin());
         allow create: if isAuthenticated() && (get(/databases/$(database)/documents/chats/$(chatId)).data.userId == request.auth.uid || isAdmin()) && isValidMessage(request.resource.data);
-        allow update: if isAdmin();
-        allow delete: if isAdmin();
+        allow update: if isAuthenticated() && (get(/databases/$(database)/documents/chats/$(chatId)).data.userId == request.auth.uid || isAdmin());
+        allow delete: if isAdmin() || (isAuthenticated() && get(/databases/$(database)/documents/chats/$(chatId)).data.userId == request.auth.uid);
       }
     }
 
